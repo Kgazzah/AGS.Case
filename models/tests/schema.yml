@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: salarie
+    description: "Vue DBT sur la table silver.salarie"
+    columns:
+      - name: ref_salarie
+        description: "Identifiant salarié"
+        tests:
+          - not_null
+          - unique
+
+  - name: demande_avance
+    description: "Vue DBT sur la table silver.demande_avance"
+    columns:
+      - name: ref_demande_avance
+        description: "Identifiant demande d'avance"
+        tests:
+          - not_null
+          - unique
+
+      - name: ref_salarie
+        description: "Référence du salarié"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('salarie')
+                field: ref_salarie
+
+  - name: paiement
+    description: "Vue DBT sur la table silver.paiement"
+    columns:
+      - name: ref_paiement
+        description: "Identifiant paiement"
+        tests:
+          - not_null
+          - unique
+
+      - name: ref_demande_avance
+        description: "Référence de la demande payée"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('demande_avance')
+                field: ref_demande_avance
+
+      - name: ref_salarie
+        description: "Référence du salarié"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('salarie')
+                field: ref_salarie

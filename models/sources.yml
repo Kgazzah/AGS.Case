@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: silver_raw
+    schema: silver_raw
+    description: "Couche Silver (tables physiques) alimentée par ingestion Python"
+    tables:
+      - name: salarie
+        description: "Référentiel des salariés ayant une demande d'avance"
+      - name: demande_avance
+        description: "Demandes d’avance (état courant côté Silver)"
+      - name: paiement
+        description: "Paiements réalisés (état courant côté Silver)"
