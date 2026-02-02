@@ -17,44 +17,66 @@ Ce projet implémente un **pipeline data de bout en bout** simulant le traitemen
 ##  Architecture cible
 
 ERP (fichiers Excel)
-│
-▼
-Python (Bronze / Landing)
-│
-▼
+
+   ↓
+   
+Python – Bronze / Landing
+
+   ↓
+   
 PostgreSQL – silver_raw (tables physiques)
-│
-▼
+
+   ↓
+   
 DBT – Silver (vues normalisées + tests)
-│
-▼
-Python – Gold (SCD2 historisé)
-│
-▼
-PostgreSQL – gold (tables historisées)
+
+   ↓
+   
+Python – Gold (historisation SCD Type 2)
+
+   ↓
+   
+PostgreSQL – Gold (tables historisées)
 
 
 ---
 
 ## Structure du projet
 
-AGS_CASE
-├── data/ # Fichiers d'exemple ERP (cas d'usage)
-├── ddl/ # Scripts SQL (création DB si nécessaire)
-├── macros/ # Macros DBT (init_db)
+AGS_CASE/
+
+├── data/                      # Fichiers d'exemple ERP (cas d'usage)
+
+├── ddl/                       # Scripts SQL (création de la base si nécessaire)
+
+├── macros/                    # Macros DBT (init_db)
+
 ├── models/
-│ ├── silver/ # Modèles DBT Silver
-│ └── tests/ # Tests DBT (not_null, unique, relations)
+
+│   ├── silver/                # Modèles DBT Silver
+
+│   └── tests/                 # Tests DBT (not_null, unique, relationships)
+
 ├── scripts/
-│ ├── bronze/ # Ingestion fichiers → silver_raw
-│ ├── gold/ # Historisation SCD2
-│ └── common/ # Connexion DB, hash, batch_run
-├── snapshots/ # Réservé (DBT)
-├── tests/ # Tests techniques
-├── run_all.ps1 # Orchestration complète
-├── requirements.txt # Dépendances Python
-├── dbt_project.yml
-└── README.md
+
+│   ├── bronze/                # Ingestion fichiers → silver_raw
+
+│   ├── gold/                  # Historisation SCD Type 2
+
+│   └── common/                # Connexion DB, hash, gestion batch_run
+
+├── snapshots/                 # Réservé (DBT)
+
+├── tests/                     # Tests techniques
+ 
+├── run_all.ps1               # Script d’orchestration complet
+
+├── requirements.txt          # Dépendances Python
+
+├── dbt_project.yml           # Configuration du projet DBT
+
+└── README.md                 # Documentation du projet
+
 
 
 ---
