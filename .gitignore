@@ -1,4 +1,28 @@
+# dbt
+/target/
+/dbt_packages/
+/logs/
 
-target/
-dbt_packages/
-logs/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv
+env/
+
+# Variables d'environnement
+.env
+.env.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
