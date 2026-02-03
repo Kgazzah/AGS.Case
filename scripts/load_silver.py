@@ -14,11 +14,17 @@ Entrées:
 
 Sortie:
 - Upsert dans silver_raw.<dataset>
+- Synchronisation "snapshot" : suppression des lignes absentes du fichier (gestion suppressions)
 - 1 ligne dans etl.batch_run (SUCCESS/FAILED)
+
+Ce script suppose que le fichier fourni est un SNAPSHOT complet du dataset à la date donnée.
+Si l’ERP envoie des fichiers incrémentaux (delta), il ne faut PAS activer la suppression.
 """
 import argparse
 import os
 import pandas as pd
+
+from psycopg2.extras import execute_values
 
 from scripts.common import (
     get_conn,
@@ -79,13 +85,54 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def sync_deletions_snapshot(conn, table: str, pk: str, pk_values: list[str]) -> int:
+    """
+    Gestion des suppressions (mode SNAPSHOT):
+    - supprime de la table cible toutes les lignes dont la PK n'est pas dans pk_values.
+    - si pk_values est vide => table vidée.
+
+    Implémentation:
+    - on charge les PK du fichier dans une table temporaire
+    - on supprime dans table toutes les lignes dont la PK n'existe pas dans cette table temp
+    """
+    with conn.cursor() as cur:
+        if not pk_values:
+            # Fichier vide => suppression totale (snapshot vide)
+            cur.execute(f"delete from {table};")
+            return cur.rowcount
+
+        # Table temporaire de clés
+        cur.execute("create temporary table tmp_keys(pk text) on commit drop;")
+
+        # Insert PKs dans tmp_keys
+        values = [(v,) for v in pk_values]
+        execute_values(cur, "insert into tmp_keys(pk) values %s", values, page_size=1000)
+
+        # Supprimer les lignes absentes du snapshot
+        cur.execute(
+            f"""
+            delete from {table} t
+            where not exists (
+              select 1 from tmp_keys k where k.pk = t.{pk}
+            );
+            """
+        )
+        return cur.rowcount
+
+
 def main():
-    ap = argparse.ArgumentParser(description="Load ERP files into silver_raw tables with idempotence.")
+    ap = argparse.ArgumentParser(description="Load ERP files into silver_raw tables with idempotence + snapshot deletions.")
     ap.add_argument("--dataset", required=True, choices=DATASETS.keys(),
                     help="Dataset to load: salarie | demande_avance | paiement")
     ap.add_argument("--as-of", required=True, help="Date logique du flux (YYYY-MM-DD), ex: 2024-08-25")
     ap.add_argument("--file", required=True, help="Chemin vers le fichier source (.xlsx/.csv)")
     ap.add_argument("--source", default="erp", help="Nom de la source (défaut: erp)")
+    ap.add_argument(
+        "--snapshot",
+        action="store_true",
+        default=True,
+        help="Mode snapshot (par défaut activé) : supprime les lignes absentes du fichier."
+    )
     args = ap.parse_args()
 
     meta = DATASETS[args.dataset]
@@ -121,14 +168,30 @@ def main():
             if date_col in df.columns:
                 df[date_col] = pd.to_datetime(df[date_col], errors="coerce").dt.date
 
+        # Nettoyage PK (important)
+        pk_col = meta["pk"]
+        df[pk_col] = df[pk_col].astype(str).str.strip()
+
         rows = df.to_dict(orient="records")
 
         # 6) upsert vers silver_raw
         upsert_table(conn, meta["table"], meta["pk"], rows, meta["cols"])
 
+        # 6bis) gestion des suppressions (snapshot sync)
+        deleted = 0
+        if args.snapshot:
+            pk_values = df[pk_col].dropna().astype(str).tolist()
+            deleted = sync_deletions_snapshot(conn, meta["table"], meta["pk"], pk_values)
+
+        conn.commit()
+
         # 7) clôture batch
-        finish_batch(conn, batch_id, "SUCCESS", f"Ingestion {args.dataset} OK ({len(rows)} rows)")
-        print(f"OK: batch_id={batch_id} dataset={args.dataset} as_of={args.as_of} rows={len(rows)}")
+        msg = f"Ingestion {args.dataset} OK ({len(rows)} rows)"
+        if args.snapshot:
+            msg += f" + snapshot deletions ({deleted} deleted)"
+        finish_batch(conn, batch_id, "SUCCESS", msg)
+
+        print(f"OK: batch_id={batch_id} dataset={args.dataset} as_of={args.as_of} rows={len(rows)} deleted={deleted}")
 
     except Exception as e:
         conn.rollback()
