@@ -30,13 +30,19 @@ function Step([string]$msg) {
 
 function Run-Cmd([string]$cmd) {
   if ($Verbose) { Write-Host $cmd -ForegroundColor DarkGray }
+
+  # Exécute la commande dans le shell courant
   iex $cmd
+
+  # Si la commande exécutée est un binaire (python/dbt), on vérifie le code retour
+  if ($LASTEXITCODE -ne 0) {
+    throw "Command failed with exit code ${LASTEXITCODE}: $cmd"
+  }
 }
 
 # --- Paths ---
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
-
 $DataDir = Join-Path $ProjectRoot "data"
 
 # --- Helpers ---
@@ -74,23 +80,33 @@ function Run-Silver() {
 function Load-Silver([string]$dataset, [string]$asOf, [string]$filePath) {
   Assert-File $filePath
   Step "Ingestion: $dataset as_of=$asOf file=$(Split-Path $filePath -Leaf)"
-  Run-Cmd "python -m scripts.load_silver --dataset $dataset --as-of $asOf --file `"$filePath`""
+  Run-Cmd "python -m scripts.bronze.load_silver --dataset $dataset --as-of $asOf --file `"$filePath`""
+}
+function Generate-Scenarios() {
+  $gen = Join-Path $ProjectRoot "scripts\generate_scenarios.py"
+  if (Test-Path $gen) {
+    Step "Generate scenario files (02/09, 10/09)"
+    Run-Cmd "python -m scripts.generate_scenarios"
+  } else {
+    Write-Host "Skipping scenario generation (missing scripts\generate_scenarios.py)" -ForegroundColor Yellow
+  }
 }
 
 # --- Gold helpers ---
 function Gold-Salarie([string]$asOf) {
   Step "Gold SCD2: salarie as_of=$asOf"
-  Run-Cmd "python -m scripts.apply_gold_salarie --as-of $asOf"
+  Run-Cmd "python -m scripts.gold.apply_gold_salarie --as-of $asOf"
 }
 
 function Gold-Paiement([string]$asOf) {
   Step "Gold SCD2: paiement as_of=$asOf"
-  Run-Cmd "python -m scripts.apply_gold_paiement --as-of $asOf"
+  Run-Cmd "python -m scripts.gold.apply_gold_paiement --as-of $asOf"
 }
 
-function Gold-Demande([string]$asOf, [string]$batchDataset = "demande_avance") {
-  Step "Gold SCD2: demande_avance as_of=$asOf (batch-dataset=$batchDataset)"
-  Run-Cmd "python -m scripts.apply_gold_demande_avance --as-of $asOf --batch-dataset $batchDataset"
+# ✅ Demande ONLY : plus de batch-dataset, plus de join paiement
+function Gold-Demande([string]$asOf) {
+  Step "Gold SCD2: demande_avance as_of=$asOf"
+  Run-Cmd "python -m scripts.gold.apply_gold_demande_avance --as-of $asOf"
 }
 
 # ------------------------------------------------------------
@@ -99,26 +115,29 @@ function Gold-Demande([string]$asOf, [string]$batchDataset = "demande_avance") {
 
 # 25/08 - Flux initial (salaries + demandes)
 Step "FLOW 25/08 - Initial"
-Assert-File (Join-Path $DataDir "salaries.xlsx")
-Assert-File (Join-Path $DataDir "demandes_avance.xlsx")
+$sal25 = Join-Path $DataDir "salaries.xlsx"
+$dmd25 = Join-Path $DataDir "demandes_avance.xlsx"
 
-Load-Silver "salarie" "2024-08-25" (Join-Path $DataDir "salaries.xlsx")
-Load-Silver "demande_avance" "2024-08-25" (Join-Path $DataDir "demandes_avance.xlsx")
+Assert-File $sal25
+Assert-File $dmd25
+
+Load-Silver "salarie" "2024-08-25" $sal25
+Load-Silver "demande_avance" "2024-08-25" $dmd25
 
 Run-Silver
 Gold-Salarie "2024-08-25"
-Gold-Demande "2024-08-25" "demande_avance"
+Gold-Demande "2024-08-25"
 
 # 03/09 - Flux paiement (paiements)
 Step "FLOW 03/09 - Paiement"
-Assert-File (Join-Path $DataDir "paiements.xlsx")
+$pay03 = Join-Path $DataDir "paiements.xlsx"
+Assert-File $pay03
 
-Load-Silver "paiement" "2024-09-03" (Join-Path $DataDir "paiements.xlsx")
+Load-Silver "paiement" "2024-09-03" $pay03
 Run-Silver
 
 Gold-Paiement "2024-09-03"
-# Enrichissement des demandes déclenché par le flux paiement
-Gold-Demande "2024-09-03" "paiement"
+# ✅ On ne relance pas Gold-Demande ici : demande = demande only
 
 # Scénarios 02/09 et 10/09 (si fichiers disponibles)
 if ($RunScenarios) {
@@ -134,7 +153,7 @@ if ($RunScenarios) {
     Load-Silver "demande_avance" "2024-09-02" $dmd0209
     Run-Silver
     Gold-Salarie "2024-09-02"
-    Gold-Demande "2024-09-02" "demande_avance"
+    Gold-Demande "2024-09-02"
   } else {
     Write-Host "Skipping 02/09 scenario (missing scenario files)." -ForegroundColor Yellow
   }
@@ -145,7 +164,7 @@ if ($RunScenarios) {
     Load-Silver "demande_avance" "2024-09-10" $dmd1009
     Run-Silver
     Gold-Salarie "2024-09-10"
-    Gold-Demande "2024-09-10" "demande_avance"
+    Gold-Demande "2024-09-10"
   } else {
     Write-Host "Skipping 10/09 scenario (missing scenario files)." -ForegroundColor Yellow
   }
