@@ -31,3 +31,5 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 *$py.class
+/data/~$salaries_2024-09-02.xlsx
+/data/~$salaries.xlsx
