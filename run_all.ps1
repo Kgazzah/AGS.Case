@@ -80,7 +80,7 @@ function Run-Silver() {
 function Load-Silver([string]$dataset, [string]$asOf, [string]$filePath) {
   Assert-File $filePath
   Step "Ingestion: $dataset as_of=$asOf file=$(Split-Path $filePath -Leaf)"
-  Run-Cmd "python -m scripts.bronze.load_silver --dataset $dataset --as-of $asOf --file `"$filePath`""
+  Run-Cmd "python -m scripts.bronze.load_file --dataset $dataset --as-of $asOf --file `"$filePath`""
 }
 function Generate-Scenarios() {
   $gen = Join-Path $ProjectRoot "scripts\generate_scenarios.py"
